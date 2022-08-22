@@ -1,0 +1,218 @@
+---
+title: "Dataset creation"
+author: '1708758'
+date: '2022-08-15'
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#install.packages("RedditExtractoR") 
+#requires R>4.1.0
+#if necessary
+#updateR() 
+
+#install.packages('dplyr')
+
+library(RedditExtractoR) # to crawl reddit
+library(dplyr)
+library(base)
+```
+
+
+# Scrape Reddit
+
+## Extract subreddits
+
+
+```{r}
+
+# Let's do a general subreddit search for general covid vaccine topics
+
+keywords <- c("covid vaccine", "vaccine", "covid") 
+subreddits <- data.frame()
+for (i in 1:5){
+  subreddits <- rbind(RedditExtractoR::find_subreddits(keywords[i]), subreddits)
+}
+
+#arrange the subreddits df to identify those of interest
+#the find_subreddits function identifies subreddits from all times
+#we are interested in those since June 2020
+
+subreddits <- arrange(subreddits, desc(date_utc))
+
+#let's filter the df to select only those observations that are more recent
+subreddits$date_utc <- as.Date(subreddits$date_utc)
+str(subreddits)
+
+subreddits <- filter(subreddits, date_utc>=as.Date("2020-06-01"))
+#23 subreddits are left
+#there seem to be some duplicates
+duplicated(subreddits)
+#remove them
+subreddits <- subreddits[!duplicated(subreddits),]
+
+#independent search revelaed a couple more subreddits that would be of interest
+#let's stract this with a targeted search
+keywords_2 <- c("DebateVaccines", "CovidVaccineFertility") 
+subreddits_targeted <- data.frame()
+for (i in 1:2){
+  subreddits_targeted <- rbind(RedditExtractoR::find_subreddits(keywords_2[i]), subreddits_targeted)
+}
+
+#these subreddits are older and not necessarily related to covid exclusively
+#but they contain more recent threads about the vaccine that will be of interest 
+#we'll filter the date from the threads extracted
+
+#there's a final category of subreddits that we could be interested in: conspiracy theory subreddits
+#let's extract them separately 
+subreddits_conspiracy <- data.frame()
+subreddits_conspiracy <- rbind(RedditExtractoR::find_subreddits("conspiracy"), subreddits_conspiracy)
+
+#we now have 3 categories of subreddits; we'll merge the first two and keep the third one separately
+#this method is used for a more targeted search and easier separation between the threads found
+subreddits <- rbind(subreddits, subreddits_targeted)
+
+#let's save the subreddits in a separate file
+write.csv(subreddits, "subreddits.csv")
+write.csv(subreddits_conspiracy, "subreddits_conspiracy.csv")
+
+```
+
+## Find threads
+
+```{r}
+#we'll first use the subreddits to find threads relating to the covid-19 vaccine fake news
+
+#we'll search for threads from all time using two different ordering criteria in turn: top and relevance
+#the search will be done using a pre-defined set of key words - this was compiled through external research
+
+thread_keywords <- read.csv("search_keywords.csv")
+str(thread_keywords)
+
+#the threads extracted will be stored in a separate dataset
+subreddit_threads_top <- data.frame()
+for (i in 1:nrow(subreddits)){
+  for (j in 1:nrow(thread_keywords)){
+    subreddit_threads_top <- rbind(RedditExtractoR::find_thread_urls(keywords=thread_keywords[j,1], sort_by = "top", subreddit=subreddits$subreddit[i], period = "all"), subreddit_threads_top)
+  }
+}
+
+subreddit_threads_relevance <- data.frame()
+for (i in 1:nrow(subreddits)){
+  for (j in 1:nrow(thread_keywords)){
+    subreddit_threads_relevance <- rbind(RedditExtractoR::find_thread_urls(keywords=thread_keywords[j,1], sort_by = "relevance", subreddit=subreddits$subreddit[i], period = "all"), subreddit_threads_relevance)
+  }
+}
+
+#save threads
+write.csv(subreddit_threads_top, "subreddit_threads_top.csv")
+write.csv(subreddit_threads_relevance, "subreddit_threads_relevance.csv")
+
+#let's do the same thing for the conspiracy theory subreddits
+subreddit_conspiracy_threads_top <- data.frame()
+for (i in 1:nrow(subreddits)){
+  for (j in 1:nrow(thread_keywords)){
+    subreddit_conspiracy_threads_top <- rbind(RedditExtractoR::find_thread_urls(keywords=thread_keywords[j,1], sort_by = "top", subreddit=subreddits_conspiracy$subreddit[i], period = "all"), subreddit_conspiracy_threads_top)
+  }
+}
+
+subreddit_conspiracy_threads_relevance <- data.frame()
+for (i in 1:nrow(subreddits)){
+  for (j in 1:nrow(thread_keywords)){
+    subreddit_conspiracy_threads_relevance <- rbind(RedditExtractoR::find_thread_urls(keywords=thread_keywords[j,1], sort_by = "top", subreddit=subreddits_conspiracy$subreddit[i], period = "all"), subreddit_conspiracy_threads_relevance)
+  }
+}
+
+
+#save threads
+write.csv(subreddit_conspiracy_threads_top, "subreddit_conspiracy_threads_top.csv")
+write.csv(subreddit_conspiracy_threads_relevance, "subreddit_conspiracy_threads_relevance.csv")
+
+#let's now search for threads outside of those subreddits
+#we'll use the same search method (i.e. same parameters)
+#we do this to target threads that may have been posted in random subreddits out of context
+
+
+individual_threads_top <- data.frame()
+for (j in 1:nrow(thread_keywords)){
+  individual_threads_top <- rbind(RedditExtractoR::find_thread_urls(keywords=thread_keywords[j,1], sort_by = "top", period = "all"))
+}
+
+individual_threads_relevance <- data.frame()
+for (j in 1:nrow(thread_keywords)){
+  individual_threads_relevance <- rbind(RedditExtractoR::find_thread_urls(keywords=thread_keywords[j,1], sort_by = "relevance", period = "all"))
+}
+
+#save threads
+write.csv(individual_threads_top, "individual_threads_top.csv")
+write.csv(individual_threads_relevance, "individual_threads_relevance.csv")
+
+```
+
+
+## Curate threads
+
+```{r}
+
+#add all threads to the same database
+all_threads <- rbind(subreddit_threads_relevance, subreddit_threads_top, subreddit_conspiracy_threads_relevance, subreddit_conspiracy_threads_top, threads_relevance, threads_top)
+write.csv(all_threads, "all_threads.csv")
+
+
+#some threads may have been picked up by more searches 
+duplicated(all_threads)
+#let's remove the duplicates
+all_threads <- all_threads[!duplicated(all_threads),]
+#there's 18325 unique threads in the dataset
+
+#let's have a look at the timeline
+all_threads <- arrange(all_threads, date_utc)
+#only keep threads since the start of the pandemic to begin with
+all_threads <- filter(all_threads, date_utc>'2020-01-01')
+#18276 threads
+
+#removing the duplicates removed duplicate threads picked up by the different searches
+#but there still seem to be some threads that are completely similar to each other
+
+#let's find a way to only keep the most relevant - unique ones
+
+#check if the urls are the same for these threads
+length(unique(all_threads$url))
+#looks like there's a lot that are the same thread
+#let's only keep the unique urls
+all_threads <- all_threads[!duplicated(all_threads$url),]
+
+#now we need the content of these threads, i.e. comments
+
+```
+
+## Extract thread comment
+
+```{r}
+reddit_content <- data.frame()
+
+for (i in 1:nrow(all_threads)){
+  skip_to_next <- FALSE
+  # To automatically skip errors:
+  tryCatch(RedditExtractoR::get_thread_content(all_threads$url[i]), error = function(e) {skip_to_next <<- TRUE}) 
+  if(skip_to_next) { next }  else {
+  comms_list <- RedditExtractoR::get_thread_content(all_threads$url[i])
+  comms_df <- comms_list$comments
+  reddit_content<-rbind(reddit_content, comms_df)
+  }
+  # To avoid bans for web crawlers (mimic human behaviour): 
+  if (i%%100==0) {Sys.sleep(sample(20:30, 1))}
+}
+#there are 98274 reddit comments found related to Zelensky
+
+#save the dataset
+write.csv(reddit_content, "covid fake news reddit content.csv")
+
+subreddit_threads_top <- read.csv("subreddit_threads_top.csv")
+ 
+```
+
