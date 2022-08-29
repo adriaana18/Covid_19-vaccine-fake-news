@@ -1,0 +1,174 @@
+---
+title: "Data Cleaning"
+author: '1708758'
+date: '2022-04-17'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#install.packages("cld2")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+```
+
+
+
+```{r}
+
+
+#upload data
+data <- readr::read_csv('covid fake news reddit content 1.csv')
+threads <- readr::read_csv("all_threads.csv")
+
+reddit_content <- data
+
+#our working dataset is reddit_content
+str(reddit_content)
+
+#reddit only keeps count of the score of a thread/comment
+#   not the number of up/downvotes.
+#   therefore the upvotes and downvotes features are useless
+#   let's delete them
+reddit_content$downvotes <- NULL
+reddit_content$upvotes <- NULL
+
+#change date format from chr to date
+reddit_content$date <- as.Date(reddit_content$date, "%d/%m/%Y")
+str(reddit_content$date)
+
+#check and remove duplicates
+sum(duplicated(reddit_content))
+#none of them 
+#reddit_content <- reddit_content[!(duplicated(reddit_content)),]
+
+#add an index column 
+reddit_content$ID <- seq.int(nrow(data))
+
+#let's add the thread information to our reddit data
+big_df <- left_join(reddit_content, threads, by="url")
+
+#this join did not go so smooth. let's clean it up
+#filter(reddit_content, author=="AutoModerator") %>%
+#  count()
+
+sum(duplicated(big_df$ID))
+big_df <- big_df[!duplicated(big_df$ID),]
+
+sum(is.na(big_df$comment))
+sum(is.na(reddit_content$comment))
+
+big_df <- filter(big_df, !is.na(comment))
+
+#save data
+write_csv(big_df, "covid vaccine reddit content all non-empty.csv")
+
+#remove comments with no text
+big_df <- big_df %>%
+  filter(comment!=c("[removed]", "[deleted]"))
+```
+
+
+## Basic text cleaning functions
+
+```{r}
+# Define a list of abbreviations and make replacements them
+# This list was complied using common internet slang words 
+# as well as the Reddit glossary available at: 
+# https://www.reddit.com/r/TheoryOfReddit/wiki/glossary/
+abv <-  c(" afaik", " ama", " cmv", " dae", " eli5", " ianal", " iirc", " imo", " imho", " ftfy", " itt", " mrw", " mfw", " op", " psa", " tl;dr", " ysk", " fta", " mic", " rtfa", "wip", " sjw", " pls ", " morn ", " cus ", " hel ", " nd ", ".", ";", "!",  ",", ":", "?","/", "_")
+repl <- c(" as far as i know", " ask me anything", " change my view", " does anybody else", " explain like i am five years old", " i am not a lawyer", "if i recall correctly", " in my opinion", " in my humble opinion", " fixed that for you", " in this thread", " my reaction when", " my face when", " original poster", " public service announcement", " too long, didn't read", " you should know", " from the article", " more in comments", " read the fucking article", " work in progress", " social justice worrior", " please", " morning", " because", " hello", " and", ". ", " ", " ", " ", " ", " ", " ", " ")
+
+ 
+# To avoid errors within tokenization, separate words by inserting a space
+big_df$comment <- gsub("([a-z])([A-Z])","\\1 \\2", big_df$comment)
+big_df$text <- gsub("([a-z])([A-Z])","\\1 \\2", big_df$text)
+big_df$title <- gsub("([a-z])([A-Z])","\\1 \\2", big_df$title)
+
+big_df$comment <- gsub("\\,"," ",big_df$comment)
+big_df$text <- gsub("\\,"," ",big_df$text)
+big_df$title <- gsub("\\,"," ",big_df$title)
+
+
+# Data cleaning steps
+big_df$comment <- big_df$comment %>%
+  str_replace_all("[^[:graph:]]", " ") %>%
+  tolower() %>% # convert everything to lowercase
+  str_squish() %>% # reduce repeated white spaces
+  rm_url() %>% # remove urls
+  replace_abbreviation(abv, repl) %>% #using the lists defined above
+  removePunctuation() %>% 
+  replace_symbol() %>%
+  replace_contraction() %>%
+  replace_word_elongation() %>%
+  replace_emoticon() %>%
+  removeNumbers() 
+
+big_df$title <- big_df$title %>%
+  str_replace_all("[^[:graph:]]", " ") %>%
+  tolower() %>% # convert everything to lowercase
+  str_squish() %>% # reduce repeated white spaces
+  rm_url() %>% # remove urls
+  replace_abbreviation(abv, repl) %>% #using the lists defined above
+  removePunctuation() %>% 
+  replace_symbol() %>%
+  replace_contraction() %>%
+  replace_word_elongation() %>%
+  replace_emoticon() %>%
+  removeNumbers()
+
+big_df$text <- big_df$text %>%
+  str_replace_all("[^[:graph:]]", " ") %>%
+  tolower() %>% # convert everything to lowercase
+  str_squish() %>% # reduce repeated white spaces
+  rm_url() %>% # remove urls
+  replace_abbreviation(abv, repl) %>% #using the lists defined above
+  removePunctuation() %>% 
+  replace_symbol() %>%
+  replace_contraction() %>%
+  replace_word_elongation() %>%
+  replace_emoticon() %>%
+  removeNumbers() 
+
+
+# Let's keep only the English comments
+big_df$comment <- iconv(big_df$comment)
+big_df$languages  <- cld2::detect_language(big_df$comment)
+
+# Check the languages
+table(big_df$languages)
+
+# Remove comments in other languages
+big_df <- big_df %>%
+  filter(languages == "en")
+# Recheck
+table(big_df$languages)
+
+#181970 clean english comments
+
+#save cleaned data 1
+write.csv(big_df, "reddit content clean 1.csv")
+
+```
+
