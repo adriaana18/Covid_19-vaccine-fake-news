@@ -186,6 +186,9 @@ length(unique(all_threads$url))
 #let's only keep the unique urls
 all_threads <- all_threads[!duplicated(all_threads$url),]
 
+#save threads
+write.csv(all_threads, "final_threads.csv")
+
 #now we need the content of these threads, i.e. comments
 
 ```
