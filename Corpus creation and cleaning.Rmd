@@ -1,0 +1,108 @@
+---
+title: "Corpus creation and cleaning"
+author: '1708758'
+date: '2022-09-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages("cld2")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+```
+
+
+```{r}
+big_df <- read_csv("reddit content clean 1.csv")
+big_df$date <- as.Date(big_df$date)
+
+comments <- big_df$comment
+comments <- as.data.frame(comments)
+comments$date <- big_df$date
+comments$metric <- big_df$score
+comments <- rename (comments, text=comments)
+
+threads_df <- read_csv("final_threads.csv")
+threads_df$full_text <- NA
+threads_df$full_text <- paste(threads_df$title, threads_df$text, sep = " ")
+
+threads <- threads_df$full_text
+threads <- as.data.frame(threads)
+threads$date <- threads_df$date_utc
+threads$metric <- threads_df$comments
+threads <- rename(threads, text=threads)
+
+corpus <- rbind(comments, threads)
+write.csv(corpus, "text corpus.csv")
+```
+
+```{r}
+# Define a list of abbreviations and make replacements them
+# This list was complied using common internet slang words 
+# as well as the Reddit glossary available at: 
+# https://www.reddit.com/r/TheoryOfReddit/wiki/glossary/
+abv <-  c(" afaik", " ama", " cmv", " dae", " eli5", " ianal", " iirc", " imo", " imho", " ftfy", " itt", " mrw", " mfw", " op", " psa", " tl;dr", " ysk", " fta", " mic", " rtfa", "wip", " sjw", " pls ", " morn ", " cus ", " hel ", " nd ", ".", ";", "!",  ",", ":", "?","/", "_")
+repl <- c(" as far as i know", " ask me anything", " change my view", " does anybody else", " explain like i am five years old", " i am not a lawyer", "if i recall correctly", " in my opinion", " in my humble opinion", " fixed that for you", " in this thread", " my reaction when", " my face when", " original poster", " public service announcement", " too long, didn't read", " you should know", " from the article", " more in comments", " read the fucking article", " work in progress", " social justice worrior", " please", " morning", " because", " hello", " and", ". ", " ", " ", " ", " ", " ", " ", " ")
+
+ 
+# To avoid errors within tokenization, separate words by inserting a space
+corpus$text <- gsub("([a-z])([A-Z])","\\1 \\2", corpus$text)
+corpus$text <- gsub("\\,"," ",corpus$text)
+
+
+# Data cleaning steps
+corpus$text <- corpus$text %>%
+  str_replace_all("[^[:graph:]]", " ") %>%
+  tolower() %>% # convert everything to lowercase
+  str_squish() %>% # reduce repeated white spaces
+  rm_url() %>% # remove urls
+  replace_abbreviation(abv, repl) %>% #using the lists defined above
+  removePunctuation() %>% 
+  replace_symbol() %>%
+  replace_contraction() %>%
+  replace_word_elongation() %>%
+  replace_emoticon() %>%
+  removeNumbers() 
+
+
+# Let's keep only the English comments
+corpus$text <- iconv(corpus$text)
+corpus$languages  <- cld2::detect_language(corpus$text)
+
+# Check the languages
+table(corpus$languages)
+
+# Remove comments in other languages
+corpus <- corpus %>%
+  filter(languages == "en")
+# Recheck
+table(corpus$languages)
+#remove just added language column
+corpus$languages <- NULL
+
+#185735 clean english comments
+
+#save
+write.csv(corpus, "corpus_clean_1.csv")
+
+```
+
