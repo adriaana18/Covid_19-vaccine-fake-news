@@ -1,0 +1,285 @@
+---
+title: "n-gram and tf-idf Exploratory Data Analysis"
+author: '1708758'
+date: '2022-09-05'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+#install.packages("cld2")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+library(lubridate) # for weeks of the year
+
+```
+
+
+# Read data
+
+```{r}
+data1 <- read.csv("corpus_tokenized_with_custom_stopwords.csv")
+data2 <- read.csv("corpus_tokenized_without_custom_stopwords.csv")
+```
+
+# Unnest tokens
+
+```{r}
+tokens1 <- data1 %>%
+  unnest_tokens(word, comment_clean)
+tokens2 <- data2 %>%
+  unnest_tokens(word, comment_clean)
+```
+
+```{r}
+rating_words <- tokens1 %>%
+  count(word , sort = TRUE)
+rating_words2 <- tokens2 %>%
+  count(word, sort=TRUE)
+```
+
+# Plot histogram
+
+```{r}
+#plot word count(col and wordcloud)
+plot_word_counts <- rating_words %>% 
+  #group_by(overall) %>%
+  top_n(20, n) %>%
+  ungroup() %>%
+  ggplot(aes(reorder(word, n), n)) + 
+  #ggtitle("Most common words when custom stop words are included")
+  geom_col(show.legend = FALSE) + 
+  scale_x_reordered()+
+  coord_flip() + 
+  labs(x = "Token (word)", y = "Frequency")
+
+plot(plot_word_counts)
+
+#Create factor to highlight relevant words
+relevant_words <- c("death", "die", "bad", "risk", "effect", "kill", "conspiracy", "government", "lie")
+rating_words2$highlights <- NA
+sth <- paste(relevant_words, collapse="|")
+
+for (i in 1:nrow(rating_words2)){
+  if (grepl(rating_words2$word[i],sth)) {
+    rating_words2$highlights = 1
+  } else {rating_words2$highlights = 0}
+}
+
+rating_words2$highlights <- as.factor(rating_words2$highlights)
+
+
+#plot word count without custom words
+plot_word_counts2 <- rating_words2 %>% 
+  #group_by(overall) %>%
+  top_n(32, n) %>%
+  ungroup() %>%
+  ggplot(aes(reorder(word, n), n, fill=highlights)) + 
+  #ggtitle("Most common words when custom stop words are included")
+  scale_fill_manual(values = c("darkslategrey", "brown1")) +
+  geom_col(show.legend = FALSE) + 
+  scale_x_reordered()+
+  coord_flip() + 
+  labs(x = "Token (word)", y = "Frequency")
+
+plot(plot_word_counts2)
+
+
+```
+
+
+
+# Word clouds
+
+```{r}
+
+# try 1
+layout(matrix(c(1, 2), nrow=2), heights=c(1, 4)) 
+par(mar=rep(0, 4)) 
+plot.new() 
+text(x=0.5, y=0.5,i)
+wordcloud(rating_words2$word, rating_words2$n, max.words = 40) # Draw the cloud plot
+
+tokens <- rating_words2[-2,]
+
+# try 2 - better
+set.seed(1234)
+wordcloud <- wordcloud(words = tokens$word, freq = tokens$n, scale=c(2.5,.5), min.freq = 1,
+          max.words=200, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+
+```
+
+# Get weeks
+
+```{r}
+
+data1$day <- NA
+data1$day <- weekdays((as.Date(data1$date)))
+data1$week <- NA
+data1$week[1] <- 1
+
+data1$week <- week(data1$date)
+data1$week_no <- NA
+for (i in 1: 10027) {
+  data1$week_no[i] <- data1$week[i]
+}
+for (i in 10027:nrow(data1)){
+  data1$week_no[i] <- data1$week[i]+53
+}
+for (i in 73927:nrow(data1)){
+  data1$week_no[i] <- data1$week[i]+106
+} 
+data1 <- rename(data1, "week_of_year" = "week")
+
+data1$week_no <- as.factor(data1$week_no)
+data1$week_of_year <- as.factor(data1$week_of_year)
+data1$day <- as.factor(data1$day)
+str(data1)
+
+write.csv(data1, "data2_invers.csv")
+```
+
+# Get frequency variable
+
+```{r}
+
+text_features <- data2 %>%
+  group_by(week_no) %>%
+  summarise(weekly_count = length(week_no))
+
+text_features$date <- NA
+text_features$date <- as.Date(text_features$date)
+text_features$date[1] <- "2020-01-28"
+
+text_features$week_no <- as.numeric(as.character(text_features$week_no))
+for (i in 2:nrow(text_features)){
+  j=i-1
+  text_features$date[i] <- (text_features$week_no[i]-text_features$week_no[j])*7+text_features$date[j]
+}
+
+write.csv(text_features, "text features 1.csv")
+
+```
+
+
+## Tf and Tf-idf analysis
+
+```{r}
+# Calculate tf, tf-idf
+tokens <- data1 %>%
+  unnest_tokens(word, comment_clean)
+
+rating_words4 <- tokens %>%
+  count(week_no, word , sort = TRUE)
+
+total_words <- rating_words4 %>%
+  group_by(week_no) %>%
+  summarise(total = sum(n))
+
+# Join the tokens with the total words
+rating_words4 <- rating_words4 %>%
+  left_join(total_words)
+# Calculate tf
+rating_words4 <- rating_words4 %>%
+  mutate(tf = n/total)
+
+# plotting
+ggplot(rating_words4, aes(tf)) +
+  geom_histogram(bins = 100, show.legend = FALSE) +
+  xlim(NA, 0.00005)
+
+# Add tf-idf
+rating_words4 <- rating_words4 %>%
+  bind_tf_idf(word, week_no, n)
+
+# Plot tf_idf
+plot_tf_idf <- rating_words4 %>% 
+  #group_by(subreddit) %>%
+  top_n(30, tf_idf) %>%
+  #ungroup() %>%
+  ggplot(aes(reorder_within(word, tf_idf, as.factor(week_no)),
+             tf_idf, fill = as.factor(week_no))) + 
+  geom_col(show.legend = TRUE) + 
+  labs(fill = "Week Number") +
+  scale_x_reordered()+
+  #facet_wrap(~subreddit, scales = "free") +
+  coord_flip() + 
+  labs(x = "Word", y = "Tf - Idf")
+plot_tf_idf 
+
+```
+
+# Bigram
+```{r}
+bigram <- data1 %>%
+  unnest_tokens(word, comment_clean, token = "ngrams", n = 2) 
+
+# Get tf-idf score
+bigram_tf_idf <- bigram %>%
+  count(week_no, word) %>%
+  bind_tf_idf(word, week_no, n) %>%
+  arrange(desc(tf_idf))
+
+# Draw the plot
+plot_bigram_tf_idf <- bigram_tf_idf %>% 
+  #group_by(week_no) %>%
+  top_n(28, tf_idf) %>%
+  #ungroup() %>%
+  ggplot(aes(reorder_within(word, tf_idf, as.factor(week_no)),
+             tf_idf, fill = as.factor(week_no))) + 
+  geom_col(show.legend = TRUE) + 
+  labs(fill = "Week Number") +
+  scale_x_reordered()+
+  #facet_wrap(~week_no, ncol = 2, scales = "free") +
+  coord_flip() + 
+  labs(x = "Word Combination (Bi-Gram)", y = "Tf-Idf")
+print(plot_bigram_tf_idf)
+```
+
+
+### Trigram
+```{r}
+trigram <- data1 %>%
+  unnest_tokens(word, comment_clean, token = "ngrams", n = 3) 
+
+# Get tf-idf score
+trigram_tf_idf <- trigram %>%
+  count(week_no, word) %>%
+  bind_tf_idf(word, week_no, n) 
+
+# Draw the plot
+plot_trigram_tf_idf <- trigram_tf_idf %>% 
+  #group_by(week_no) %>%
+  top_n(23, tf_idf) %>%
+  #ungroup() %>%
+  ggplot(aes(reorder_within(word, tf_idf, as.factor(week_no)),
+             tf_idf, fill = as.factor(week_no))) + 
+  geom_col(show.legend = TRUE) + 
+  labs(fill = "Week Number") +
+  scale_x_reordered()+
+  #facet_wrap(~week_no, scales = "free") +
+  coord_flip() + 
+  labs(x = "Word Combination (Tri-Gram)", y = "Tf-Idf")
+print(plot_trigram_tf_idf)
+```
