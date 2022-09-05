@@ -1,0 +1,152 @@
+---
+title: "Tokenization and advanced cleaning"
+author: '1708758'
+date: '2022-08-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#install.packages("cld2")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+```
+
+
+```{r}
+corpus_tokenization <- read_csv("corpus_tokenization.csv")
+
+```
+
+
+# Tokenization and stopword removal
+
+# Tokenize, remove stop words, lemmatize
+
+```{r}
+stop_words
+
+#the first step is to tokenize and remove stop words
+#the stop words dictionary contains apostrophes so let's remove them 
+#to bring the two in the same shape
+
+stop_words$word <- removePunctuation(stop_words$word)
+
+# Tokenize and remove stop words
+text_tokens <- corpus_tokenization %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words)
+
+# Lemmatize
+text_tokens$word <- lemmatize_words(text_tokens$word)
+
+#Let's check the list of words to see 
+#  whether we can remove some more custom stop words
+top_tokens1 <- text_tokens %>%
+  count(word, sort = TRUE)
+write.csv(top_tokens1, "top_tokens.csv")
+# as expected, the most common words are those defining the theme
+# we want to remove these to get more of an insight into what people are saying about the vaccine
+# but at the same time they may be important for getting the proper meaning of the comments
+# we can store a dataset with them and one without them to see  which analysis will be more valuable
+
+
+# Create custom stopwords list 
+my_stopwords <- tibble(word = c("vaccine", "people", "covid", "vaccinate", "comment", "vaccination"), lexicon = "custom")
+
+# Remove custom stopwords
+text_tokens_2 <- text_tokens %>%
+  anti_join(my_stopwords)
+
+top_tokens2 <- text_tokens_2 %>%
+  count(word, sort = TRUE)
+write.csv(top_tokens2, "top_tokens2.csv")
+
+```
+
+# Solve spelling mistakes
+
+```{r}
+#create the spell-check function
+correct_spelling <- function(input) {
+  output <- case_when(
+    !hunspell_check(input, dictionary('en_GB')) ~
+    hunspell_suggest(input, dictionary('en_GB')) %>%
+      # Get first suggestion, or NA if suggestions list is empty
+      map(1, .default = NA) %>%
+      unlist(),
+    TRUE ~ input # if word is correct
+  )
+  # If input incorrectly spelled but no suggestions, return input word
+  ifelse(is.na(output), input, output)
+}
+
+# Get the corrected spelling
+tokens_cleaned <- text_tokens %>%
+  mutate(suggestion = correct_spelling(word)) %>%
+  filter(suggestion != word)
+``` 
+
+
+Regroup data
+
+```{r}
+# Re-group the data back to the non-tokenized form
+
+# For data with custom stopwords
+cleaned_data_text <- text_tokens %>%
+  group_by(ID) %>%
+  summarise(comment_clean  = paste(word,collapse = " "), 
+            totalwords = n())
+
+data <- corpus_tokenization %>% 
+  dplyr::select(-text)
+
+# Get the final total data
+cleaned_data_text <- data %>%
+  inner_join(cleaned_data_text) 
+
+# Get cleaned tokens
+#tokens_cleaned <- cleaned_data %>%
+#  unnest_tokens(word, comment_clean)
+
+#save data
+write.csv(cleaned_data_text, "corpus_tokenized_with_custom_stopwords.csv")
+
+# For data without custom stop words
+cleaned_data_text_2 <- text_tokens_2 %>%
+  group_by(ID) %>%
+  summarise(comment_clean  = paste(word,collapse = " "), 
+            totalwords = n())
+
+# Get the final total data
+cleaned_data_text_2 <- data %>%
+  inner_join(cleaned_data_text_2) 
+
+#save data
+write.csv(cleaned_data_text_2, "corpus_tokenized_without_custom_stopwords.csv")
+
+# we now have two sets of cleaned data: tokenized and non-tokenized 
+# Both will be used in later steps
+```
+
+
