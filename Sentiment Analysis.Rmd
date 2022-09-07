@@ -1,0 +1,117 @@
+---
+title: "Sentiment Analysis"
+author: '1708758'
+date: '2022-09-05'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#install.packages("vader")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+library(lubridate) # for weeks of the year
+library(vader) # for sentiment analysis
+library(textdata) # for NRC sentiments
+
+```
+
+```{r}
+data <- read.csv("data2_invers.csv")
+```
+
+# Vader Sentiments
+
+```{r}
+
+#get vader sentiments into separata dataset
+allvals<- NULL
+for (i in 1:length(data)){
+outs <-  vader_df(data$comment_clean[i])
+allvals2 <- rbind(allvals2,outs)
+}
+
+write.csv(allvals, "allvals.csv")
+
+```
+
+# NRC sentiments
+
+```{r}
+#unnest tokens for analysis
+tokens <- data %>% 
+  unnest_tokens(word, comment_clean)
+
+total_sentiments <- tokens %>%
+        right_join(get_sentiments("nrc")) %>%
+        filter(!is.na(sentiment)) %>%
+        count(sentiment, sort = TRUE)
+
+write.csv(total_sentiments, "total_sentiments_nrc.csv")
+
+just_sentiments <- total_sentiments[-c(1,2),]
+
+plot <- just_sentiments %>%
+  ggplot(aes(x=sentiment, y=n, fill = sentiment)) + 
+  geom_col(show.legend = TRUE) +
+  labs(x = "Sentiments", y = "Count") 
+
+print(plot)
+
+
+sentiments <- tokens %>%
+  right_join(get_sentiments("nrc")) 
+
+sentiments_count <- sentiments %>%
+  group_by(ID) %>%
+  count(sentiment, sort = FALSE)
+
+
+nrc_sentiments <- get_sentiments("nrc")
+#130 believed trust
+#158 bureaucracy trust
+
+#investigate the evolution of sentiments 
+sentiments_weekly_1 <- tokens %>%
+        right_join(get_sentiments("nrc")) %>%
+        filter(!is.na(sentiment)) %>%
+        filter(sentiment!="positive") %>%
+        filter(sentiment != "negative") %>%
+        group_by(week_no) %>%
+        count(sentiment, sort = TRUE)
+
+max_sentiment <- sentiments_weekly_1 %>%
+  group_by(week_no)%>%
+  summarise(max=max(n))
+
+df <- max_sentiment %>% left_join(sentiments_weekly_1)
+nre <- df[1,]
+for (i in 1:nrow(df)){
+  if (df$max[i]==df$n[i]){
+    nre <- rbind(nre, df[i,])
+  }
+}
+
+write.csv(nre, "weekly_sentiments_nre.csv")
+
+```
+
