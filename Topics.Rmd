@@ -1,0 +1,729 @@
+---
+title: "Topic Modelling"
+author: '1708758'
+date: '2022-09-07'
+output: html_document
+---
+
+```{r}
+#install.packages("stm")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+library(lubridate) # for weeks of the year
+library(vader) # for sentiment analysis
+library(textdata) # for NRC sentiments
+library(udpipe)
+library(kableExtra) # for topic modelling
+library(stm) # for topic modelling
+
+```
+
+
+```{r}
+data <- read.csv("data2_invers.csv")
+```
+
+# Preprocessing for LDA
+
+## POS Tagging
+
+```{r}
+#Download and extract the language model
+langmodel_download <- udpipe::udpipe_download_model("english")
+langmodel <- udpipe::udpipe_load_model(langmodel_download$file_model)
+ 
+#Apply pos tagging to the first 10k rows to check
+postagged <-
+   udpipe_annotate(
+   langmodel, 
+   data$comment_clean[1:2000], 
+   parallel.cores=8, 
+   trace=1000
+   )
+
+#save results as dataframe 
+postagged_df <- as.data.frame(postagged)
+
+#apply function up to 50k to avoid crashing
+postagged2 <-
+  udpipe_annotate(
+  langmodel,
+  data$comment_clean[10001:50000],
+  parallel.cores=8,
+  trace=1000
+  )
+postagged2 <- as.data.frame(postagged2)
+
+#repreat the steps until we tagged the rest of the data
+postagged3 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[50001:60000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged3 <- as.data.frame(postagged3)
+
+postagged4 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[70001:100000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged4 <- as.data.frame(postagged4)
+
+postagged5 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[100001:125000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged5 <- as.data.frame(postagged5)
+
+postagged6 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[130001:150000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged6 <- as.data.frame(postagged6)
+
+postagged7 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[150001:183521],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged7 <- as.data.frame(postagged7)
+
+
+#some are missing let's find them
+
+postagged31 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[60001:65000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged31 <- as.data.frame(postagged31)
+postagged32 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[65001:67000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged32 <- as.data.frame(postagged32)
+postagged33 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[67001:68000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged33 <- as.data.frame(postagged33)
+postagged34 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[68001:68250],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged34 <- as.data.frame(postagged34)
+
+postagged35 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[68251:68300],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged35 <- as.data.frame(postagged35)
+
+postagged36 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[68350:70000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged36 <- as.data.frame(postagged36)
+
+
+
+postagged351 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[68301:68326],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged351 <- as.data.frame(postagged351)
+postagged352 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[68328:68349],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged352 <- as.data.frame(postagged352)
+
+#and another
+
+postagged51 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[125001:127000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged51 <- as.data.frame(postagged51)
+
+postagged52 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[127001:129000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged52 <- as.data.frame(postagged52)
+
+postagged53 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[129001:129250],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged53 <- as.data.frame(postagged53)
+
+
+postagged54 <-
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[129250:129400],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged54 <- as.data.frame(postagged54)
+
+postagged55 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[129401:129450],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged55 <- as.data.frame(postagged55)
+
+postagged56 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[129450:130000],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged56 <- as.data.frame(postagged56)
+
+postagged58 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[129401:129404],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged58 <- as.data.frame(postagged58)
+
+
+postagged57 <- 
+   udpipe_annotate(
+   langmodel,
+   data$comment_clean[129406:129450],
+   parallel.cores=8,
+   trace=1000
+   )
+postagged57 <- as.data.frame(postagged57)
+
+#Combine everything
+postagged_final <- rbind(postagged, postagged2, postagged3, postagged31, postagged32, postagged33, postagged34, postagged35, postagged351, postagged352,postagged36, postagged4, postagged5, postagged51, postagged52, postagged53, postagged54, postagged58, postagged57, postagged57, postagged6)
+
+#save data
+write.csv(postagged_final, "pos_tagged_data.csv")
+postagged <- read.csv("pos_tagged_data.csv")
+```
+
+## Filter and detokenize the postagged terms
+ 
+```{r}
+
+lematized <- postagged_final%>%
+  filter(upos %in% c("NOUN", "ADJ", "ADV"))%>%
+  dplyr::select(doc_id,lemma)%>%
+  group_by(doc_id)%>%
+  summarise(documents_pos_tagged=paste(lemma, collapse=" "))
+
+data_pos <- data %>%
+  mutate(doc_id = paste0("doc",row_number()))
+
+data_pos <- data_pos %>%
+  left_join(lematized)
+
+```
+# Apply LDA
+
+## STM Pre-Processing
+
+```{r}
+#let's use the textProcessor function to prepare the text for topic modelling
+
+processed <- textProcessor(data_pos$documents_pos_tagged,
+                         metadata=data_pos,
+                         customstopwords = c("vaccine", "people", "covid", "vaccinate", "comment", "vaccination"),
+                         stem=F)
+
+```
+
+Building corpus... 
+Converting to Lower Case... 
+Removing punctuation... 
+Removing stopwords... 
+Remove Custom Stopwords...
+Removing numbers... 
+Creating Output... 
+
+```{r}
+threshold <- round(1/100*length(processed$documents),0)
+
+out <- prepDocuments(processed$documents, 
+                   processed$vocab, 
+                   processed$meta, 
+                   lower.thresh=threshold)
+
+```
+Removing 44227 of 44944 terms (594875 of 1395539 tokens) due to frequency 
+Removing 947 Documents with No Words 
+Your corpus now has 38817 documents, 717 terms and 800664 tokens.
+
+
+# Search for optimal K
+
+```{r}
+# Search for optimal k again
+numtopics <- searchK(out$documents,
+                     out$vocab,
+                     K=seq(from=4,to=10,by=1))
+plot(numtopics)
+
+# Let's try more topics to see what happens
+numtopics1 <- searchK(out$documents,
+                     out$vocab,
+                     K=seq(from=10, to=25,by=2))
+
+plot(numtopics1)
+
+numtopics2 <- searchK(out$documents,
+                     out$vocab,
+                     K=seq(from=5, to=40,by=3))
+
+plot(numtopics2)
+
+# coherence suggests k=14 or k=20 might be optimal. we'll use that
+```
+
+## Using the topic model
+
+```{r}
+#estimate the topic model
+redditbfit <- stm(documents = out$documents, 
+                 vocab = out$vocab, 
+                 K = 20, 
+                 max.em.its = 75, 
+                 data = out$meta, 
+                 reportevery=10, 
+                 # gamma.prior = "L1", 
+                 sigma.prior = 0.7, 
+                 init.type = "Spectral")
+summary(redditbfit) # explore the model
+plot(redditbfit) # inspect the % of topics in the Corpus
+```
+
+```{r}
+# save the topic model as an stm object
+this_stm_object <- redditbfit$theta 
+colnames(this_stm_object) <- paste0("topic_",1:20)
+causal_topic_df <- cbind(out$meta,this_stm_object)
+```
+
+
+## Plots
+
+### Topic proportions
+
+```{r}
+topic_summary <- summary(redditbfit)
+topic_proportions <- colMeans(redditbfit$theta)
+
+topic_labels <- paste0("topic_",1:20)
+
+table_towrite_labels <- data.frame()
+
+for(i in 1:length(topic_summary$topicnums)){
+   row_here <- tibble(topicnum= topic_summary$topicnums[i],
+                      topic_label = topic_labels[i],
+                      proportion = 100*round(topic_proportions[i],4),
+                     frex_words = paste(topic_summary$frex[i,1:7],
+                                        collapse = ", "))
+   table_towrite_labels <- rbind(row_here,table_towrite_labels)
+}
+
+table_towrite_labels %>% arrange(topicnum)%>%
+  kbl(col.names = c("Topic_Number","Topic_Label","Proportion","Frequent & Exclusive Words")) %>%
+  kable_styling(full_width = T,bootstrap_options = c("striped", "hover", "condensed", "responsive"),position = "center")%>%
+  kable_paper("hover")
+
+```
+
+```{r}
+convergence_theta <- as.data.frame(redditbfit$theta) 
+colnames(convergence_theta) <- paste0("topic_",1:20)
+```
+
+
+### Word Clouds
+
+```{r}
+pal = brewer.pal(9,"Pastel1")
+stm::cloud(redditbfit,topic = 1, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 2, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 3, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 4, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 5, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 6, max.words = 35, colors=pal)
+stm::cloud(redditbfit,topic = 7, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 8, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 9, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 10, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 11, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 12, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 13, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 14, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 15, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 16, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 17, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 18, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 19, max.words = 40, colors=pal)
+stm::cloud(redditbfit,topic = 20, max.words = 40, colors=pal)
+```
+
+
+### PCA and Correlation Matrix 
+
+
+```{r}
+# prep the data
+gamma_topics <- tidy(redditbfit,matrix="gamma")
+gamma_topics <- gamma_topics%>% 
+  pivot_wider(names_from=topic,values_from=gamma)
+colnames(gamma_topics) <- c("document",topic_labels)
+rownames(gamma_topics) <- gamma_topics$document
+gamma_topics$document <- NULL
+
+library(tidyr)
+install.packages("factoextra")
+library(corrplot)
+library(FactoMineR)
+library(factoextra)
+# Topic correlation plot
+corrplot::corrplot(cor(gamma_topics))
+
+# Principle Component Analysis
+pcah <- FactoMineR::PCA(gamma_topics,graph = FALSE) 
+factoextra::fviz_pca_var(pcah,col.var = "contrib", repel = FALSE, legend.title="Contribution")
+
+save.image()
+```
+
+
+# Get the variable
+
+## Apply POS tagging again
+
+```{r}
+data <- data[-68327,]
+data <- data[-129405,]
+
+postagged_all <-
+   udpipe_annotate(
+   langmodel, 
+   data$comment_clean[1:183519], 
+   parallel.cores=8, 
+   trace=1000
+   )
+
+#save results as dataframe 
+postagged_all
+  
+as.data.frame(postagged_all)
+saveRDS(postagged_all, file="postagged_all.RData")
+postagged_all <- readRDS("postagged_all.RData")
+
+
+
+
+```
+
+```{r}
+postagged_final <- postagged %>%
+  mutate(doc_id_unique = paste0(doc_id,sentence))
+
+lematized <- postagged_final %>%
+  filter(upos %in% c("NOUN", "ADJ", "ADV")) %>%
+  dplyr::select(doc_id_unique,lemma, doc_id) %>%
+  group_by(doc_id_unique) %>%
+  summarise(documents_pos_tagged=paste(lemma, collapse=" "))
+
+lematized <- lematized %>%
+  mutate (doc_id=paste0("doc",row_number()))
+
+data_pos <- data %>%
+  mutate(doc_id = paste0("doc",row_number()))
+
+data_pos <- data_pos %>%
+  left_join(lematized)
+
+```
+
+## STM Pre-Processing
+
+```{r}
+#let's use the textProcessor function to prepare the text for topic modelling
+data_pos_1 <- data_pos %>%
+  filter(data_pos$week_no==124)
+
+list <- list()
+
+list[[1]] <- data_pos_1
+
+for (i in 11:15) {
+  df <- data_pos %>%
+    filter(data_pos$week_no==i)
+  list[[i]] <- df
+}
+
+processed_list <- list()
+processed_list[[1]] <- processed
+
+for (i in 11:15) {
+  df <- list[[i]]
+  processed_df <- textProcessor(df$documents_pos_tagged, metadata=df, customstopwords = c("vaccine", "people", "covid", "vaccinate", "comment", "vaccination"), stem=F)
+  processed_list[[i]] <- processed_df
+}
+
+processed <- textProcessor(data_pos_1$documents_pos_tagged,
+                         metadata=data_pos_1,
+                         customstopwords = c("vaccine", "people", "covid", "vaccinate", "comment", "vaccination"),
+                         stem=F)
+
+```
+
+Building corpus... 
+Converting to Lower Case... 
+Removing punctuation... 
+Removing stopwords... 
+Remove Custom Stopwords...
+Removing numbers... 
+Creating Output... 
+
+```{r}
+list_out <- list()
+list_out[[1]] <- out
+
+for (i in 11:15){
+  crt <- processed_list[[i]]
+  threshold <- round(1/100*length(crt$documents),0)
+  out <- prepDocuments(crt$documents, crt$vocab, crt$meta, lower.thresh=threshold)
+  list_out[[i]] <- out
+}
+
+threshold <- round(1/100*length(processed$documents),0)
+out <- prepDocuments(processed$documents, 
+                   processed$vocab, 
+                   processed$meta, 
+                   lower.thresh=threshold)
+
+```
+Removing 44227 of 44944 terms (594875 of 1395539 tokens) due to frequency 
+Removing 947 Documents with No Words 
+Your corpus now has 38817 documents, 717 terms and 800664 tokens.
+
+
+## Using the topic model
+
+```{r}
+#estimate the topic model
+
+list_models <- list()
+list_models[[1]] <- redditbfit
+
+
+for (i in 11:15){
+  out_crt <- list_out[[i]]
+  model <- stm(documents = out_crt$documents, vocab = out_crt$vocab, K = 8, max.em.its = 75, data = out_crt$meta, reportevery=10, sigma.prior = 0.7,   init.type = "Spectral")
+  list_models[[i]] <- model
+}
+
+
+summary(list_models[[15]])
+
+redditbfit <- stm(documents = out$documents, 
+                 vocab = out$vocab, 
+                 K = 8, 
+                 max.em.its = 75, 
+                 data = out$meta, 
+                 reportevery=10, 
+                 # gamma.prior = "L1", 
+                 sigma.prior = 0.7, 
+                 init.type = "Spectral")
+summary(redditbfit) # explore the model
+plot(redditbfit) # inspect the % of topics in the Corpus
+```
+
+```{r}
+# save the topic model as an stm object
+
+list_objects <- list()
+list_objects[[1]] <- causal_topic_df
+
+for (i in 17:22) {
+  redditfitbit <- list_models[[i]]
+  this_stm_object1 <- redditfitbit$theta 
+  colnames(this_stm_object1) <- paste0("topic_",1:8)
+  out_crt <- list_out[[i]]
+  causal_topic_df <- cbind(out_crt$meta,this_stm_object1)
+  list_objects[[i]] <- causal_topic_df
+}
+
+
+redditfitbit <- list_models[[11]]
+this_stm_object1 <- redditfitbit$theta 
+colnames(this_stm_object1) <- paste0("topic_",1:8)
+causal_topic_df <- cbind(out$meta,this_stm_object)
+
+ out <- list_out[[134]]
+```
+
+
+```{r}
+causal_topic_df %>%
+group_by(review_id) %>%
+summarise(mtopic1=mean(topic_1),
+mtopic2 = mean(topic_2),
+mtopic3 = mean(topic_3),
+mtopic4 = mean(topic_4),
+mtopic5 = mean(topic_5),
+mtopic6 = mean(topic_6),
+mtopic7 = mean(topic_7),
+mtopic8 = mean(topic_8),
+mtopic9 = mean(topic_9),
+mtopic10 = mean(topic_10)) %>%
+left_join(bing_result) %>%
+na.omit() -> regress_stm_occ_overall
+```
+
+
+
+
+
+```{r}
+final_list <- list()
+final_list[[1]] <- table
+
+
+for (i in 17:22){
+  model <- list_models[[i]]
+  topic_summary <- summary (model)
+  topic_proportions <- colMeans(model$theta)
+  topic_labels <- paste0("topic_,",1:8)
+  table_towrite_labels <- data.frame()
+  for(j in 1:length(topic_summary$topicnums)){
+     row_here <- tibble(topicnum= topic_summary$topicnums[j],
+```
+
+
+```{r}
+topic_label = topic_labels[j],
+                      proportion = 100*round(topic_proportions[j],4),
+                      frex_words = paste(topic_summary$frex[j,1:7],
+                                        collapse = ", "))
+      table_towrite_labels <- rbind(row_here,table_towrite_labels) }
+  table <- table_towrite_labels %>% arrange(topicnum) %>%
+      kbl(col.names = c("Topic_Number","Topic_Label","Proportion","Frequent & Exclusive Words"), caption = paste0("Week no. ",i)) %>%
+      kable_styling(full_width = T,bootstrap_options = c("striped", "hover", "condensed", "responsive"),position = "center")%>%
+      kable_paper("hover")
+  final_list[[i]] <- table
+}
+
+for (i in 26:134){
+  final_list[[i]]
+}
+
+
+
+
+
+topic_summary <- summary(redditbfit)
+topic_proportions <- colMeans(redditbfit$theta)
+
+topic_labels <- paste0("topic_",1:20)
+
+table_towrite_labels <- data.frame()
+
+for(i in 1:length(topic_summary$topicnums)){
+   row_here <- tibble(topicnum= topic_summary$topicnums[i],
+                      topic_label = topic_labels[i],
+                      proportion = 100*round(topic_proportions[i],4),
+                     frex_words = paste(topic_summary$frex[i,1:7],
+                                        collapse = ", "))
+   table_towrite_labels <- rbind(row_here,table_towrite_labels)
+}
+
+table <- table_towrite_labels %>% arrange(topicnum)%>%
+  kbl(col.names = c("Topic_Number","Topic_Label","Proportion","Frequent & Exclusive Words"), caption = paste0("Week no. ",i)) %>%
+  kable_styling(full_width = T,bootstrap_options = c("striped", "hover", "condensed", "responsive"),position = "center")%>%
+  kable_paper("hover")
+table
+
+
+
+final_list[[134]]
+
+```
+
+```{r}
+convergence_theta <- as.data.frame(redditbfit$theta) 
+colnames(convergence_theta) <- paste0("topic_",1:8)
+```
+
+
+
+
