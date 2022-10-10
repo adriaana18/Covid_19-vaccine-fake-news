@@ -1,0 +1,189 @@
+---
+title: "Granger Causality"
+author: '1708758'
+date: '2022-09-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+#install.packages("stm")
+
+library(RedditExtractoR) # crawl reddit
+library(dplyr)
+library(ggplot2)
+library(base)
+library(qdap) # text processing
+library(tm)
+library(textclean)
+library(stringr)
+library(tidytext)
+library(textstem) # for lemmatization
+library(wordcloud)
+library(hunspell) # for spelling mistakes
+library(purrr)
+library(readr)
+library(anytime)
+library(cld2) # for language checks
+library(lubridate) # for weeks of the year
+library(vader) # for sentiment analysis
+library(textdata) # for NRC sentiments
+library(udpipe)
+library(kableExtra) # for topic modelling
+library(stm) # for topic modelling
+library(lmtest) # for granger causality
+library(vars) # for VAR models including granger causality
+```
+
+
+```{r}
+
+vars <- read.csv("text features 1.csv")
+sentiments <- read.csv("sentiment_scores_vader.csv")
+vaccines <- read.csv("vaccination data.csv")
+data <- read.csv("data2_invers.csv")
+
+sentiments$ID <- seq.int(nrow(sentiments))
+data <- data %>%
+  left_join(sentiments, by="ID")
+
+weekly_sentiments <- data %>%
+  group_by(week_no) %>%
+  summarise(mean(compound))
+
+vars_2 <- vars %>%
+  left_join(weekly_sentiments, by="week_no")
+
+
+vaccines <- vaccines %>%
+  rename( date.new = date)
+testing_df <- vars_2 %>%
+  left_join(vaccines, by="date.new")
+
+write.csv(testing_df, "2 vars testing df.csv")
+
+summary (testing_df$weekly_count)
+
+testing_df <- testing_df %>%
+  rename( sentiments = "mean(compound)")
+
+grangertest(Male ~ sentiments + weekly_count, order = 3, data = testing_df)
+
+
+granger_causality(
+  varmodel,
+  var.y = Total,
+  var.x = weekly_count,
+  test = c("F", "Chisq"),
+  file = NULL,
+  check.dropped = FALSE
+)
+install.packages("bruceR")
+library(bruceR)
+  data(Canada)
+  VARselect(Canada)
+  vm = VAR(Canada, p=3)
+  model_summary(vm)
+  granger_causality(vm)
+Canada
+
+df <- testing_df[,c("date", "weekly_count", "Total")]
+
+df <- na.omit(df)
+df <- df[,-1]
+
+vm <- VAR(df)
+
+
+install.packages("tseries")
+library(tseries)
+
+adf.test(na.omit(testing_df$weekly_count))
+adf.test(df$weekly_count)
+
+
+time_data <- na.omit(testing_df)
+time_data <- time_data[, c("date","weekly_count", "sentiments", "Age..25.34", "Age..25.34", "Age..35.44", "Age..45.64", "Age..65.", "Total")]
+
+
+kpss.test(time_data$weekly_count)
+kpss.test(time_data$sentiments)
+kpss.test(time_data$Age..16.24)
+kpss.test(time_data$Age..25.34)
+kpss.test(time_data$Age..35.44)
+kpss.test(time_data$Age..45.64)
+kpss.test(time_data$Age..65.)
+kpss.test(time_data$Total)
+
+
+weekly_count <- diff(time_data$weekly_count, lag=1)
+age16 <- diff(time_data$Age..16.24, lag=1)
+age25 <- diff(time_data$Age..25.34, lag=1)
+age35 <- diff(time_data$Age..35.44, lag=1)
+age45 <- diff(time_data$Age..45.64, lag=1)
+age65 <- diff(time_data$Age..65., lag=1)
+total <- diff(time_data$Total, lag=1)
+
+
+kpss.test(weekly_count)
+kpss.test(age16)
+kpss.test(age25)
+kpss.test(age35)
+kpss.test(age45)
+kpss.test(age65)
+kpss.test(total)
+
+total <- diff(total)
+kpss.test(total)
+
+time_data <- time_data[-1,]
+time_data$Age..16.24<-age16[-1]
+time_data$Age..25.34<-age25[-1]
+time_data$Age..35.44<-age35[-1]
+time_data$Age..45.64<-age45[-1]
+time_data$Age..65.<-age65[-1]
+time_data$Age..16.24 <- total
+time_data$weekly_count <- weekly_count[-1]
+
+
+grangertest(Age..65. ~ sentiments, order = 1, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 2, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 3, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 4, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 5, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 6, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 7, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 8, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 9, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 10, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 11, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 12, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 13, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 14, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 15, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 16, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 17, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 18, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 19, data = time_data)
+grangertest(Age..65. ~ sentiments, order = 20, data = time_data)
+
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
